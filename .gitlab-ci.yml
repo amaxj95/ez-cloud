@@ -1,0 +1,44 @@
+stages:
+  - build_k3d_cluster
+
+variables:
+  K3D_CLUSTER_NAME: my-k3d-cluster
+  KUBECONFIG: /home/codespace/.kube/config
+
+build_k3d_cluster:
+  stage: build_k3d_cluster
+  script:
+    # Install k3d if not already installed
+    - if ! command -v k3d &>/dev/null; then curl -s https://raw.githubusercontent.com/rancher/k3d/main/install.sh | bash; fi
+
+    # Create a k3d cluster
+    - k3d cluster create $K3D_CLUSTER_NAME --api-port 6550 -p "8080:80@loadbalancer" -p "8443:443@loadbalancer"
+
+    # Get the kubeconfig for the newly created cluster
+    - k3d kubeconfig get $K3D_CLUSTER_NAME > $KUBECONFIG
+
+    # Install MetalLB in the cluster
+    - kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.11.0/manifests/namespace.yaml
+    - kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.11.0/manifests/metallb.yaml
+
+    # Create a ConfigMap for MetalLB with your specific configuration (adjust the IP range as needed)
+    - kubectl create -f - <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  namespace: metallb-system
+  name: config
+data:
+  config: |
+    address-pools:
+    - name: default
+      protocol: layer2
+      addresses:
+      - 192.168.1.240-192.168.1.250
+EOF
+
+  artifacts:
+    paths:
+      - $KUBECONFIG
+  only:
+    - main  # Define the branches where you want this job to run
